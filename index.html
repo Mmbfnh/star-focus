@@ -253,16 +253,16 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // 🔥 Firebase Configuration - استبدل هذه بالقيم الحقيقية من مشروعك
-   const firebaseConfig = {
-  apiKey: "AIzaSyBFrwSTZgNisYmaqidjSAZHWune0157vyM",
-  authDomain: "testjja-21f01.firebaseapp.com",
-  projectId: "testjja-21f01",
-  storageBucket: "testjja-21f01.firebasestorage.app",
-  messagingSenderId: "294541693024",
-  appId: "1:294541693024:web:7d57aba3a8f74762c03305",
-  measurementId: "G-HT9H2GGJY8"
-};
+        // 🔥 Firebase Configuration - استخدم بياناتك الحقيقية هنا
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyBFrwSTZgNisYmaqidjSAZHWune0157vyM",
+            authDomain: "testjja-21f01.firebaseapp.com",
+            projectId: "testjja-21f01",
+            storageBucket: "testjja-21f01.firebasestorage.app",
+            messagingSenderId: "294541693024",
+            appId: "1:294541693024:web:7d57aba3a8f74762c03305",
+            measurementId: "G-HT9H2GGJY8"
+        };
 
         // Constants
         const DEFAULT_REWARDS = [
@@ -329,7 +329,7 @@
             }
         };
 
-        // Firebase Service مع معالجة أخطاء محسنة
+        // Firebase Service
         const firebaseService = {
             db: null,
             initialized: false,
@@ -337,7 +337,16 @@
 
             init() {
                 try {
-                    // التحقق من تكوين Firebase
+                    console.log("🔄 جاري تهيئة Firebase...");
+                    
+                    // التحقق من وجود FIREBASE_CONFIG
+                    if (typeof FIREBASE_CONFIG === 'undefined') {
+                        this.error = "FIREBASE_CONFIG غير معرّف";
+                        console.error(this.error);
+                        return false;
+                    }
+
+                    // التحقق من بيانات التكوين
                     if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.projectId.includes('your-project')) {
                         this.error = "⚠️ يرجى تكوين Firebase باستخدام بيانات مشروعك الحقيقية";
                         console.warn(this.error);
@@ -624,7 +633,6 @@
                 ConnectionManager.init();
             }, []);
 
-            // باقي دوال التطبيق...
             const loadFromLocalStorage = useCallback(() => {
                 try {
                     const storedChildren = localStorage.getItem("childrenData");
@@ -674,18 +682,328 @@
                 setTimeout(() => setNotification({ show: false, message: "", type: "" }), 4000);
             }, []);
 
-            // ... باقي دوال التطبيق تبقى كما هي
+            // Child Management
+            const addChild = useCallback((childData) => {
+                const validationErrors = utils.validateChildData(childData);
+                if (validationErrors.length > 0) {
+                    validationErrors.forEach(error => showNotification(error, "error"));
+                    return;
+                }
+
+                const childWithId = { ...childData, id: utils.generateId() };
+                setAppState(prev => ({
+                    ...prev,
+                    children: [...prev.children, childWithId],
+                    step: 1
+                }));
+                showNotification(`تمت إضافة الطفل ${childData.name} بنجاح`, "success");
+            }, [showNotification]);
+
+            const updateChild = useCallback((childIndex, updates) => {
+                setAppState(prev => ({
+                    ...prev,
+                    children: prev.children.map((child, index) =>
+                        index === childIndex ? { ...child, ...updates } : child
+                    )
+                }));
+            }, []);
+
+            const deleteChild = useCallback((childIndex) => {
+                const childName = appState.children[childIndex]?.name;
+                if (!childName || !window.confirm(`هل أنت متأكد من حذف ${childName}؟`)) return;
+
+                setAppState(prev => ({
+                    ...prev,
+                    children: prev.children.filter((_, index) => index !== childIndex),
+                    currentChildIndex: prev.currentChildIndex >= childIndex && prev.currentChildIndex > 0 
+                        ? prev.currentChildIndex - 1 
+                        : prev.currentChildIndex
+                }));
+
+                if (appState.useFirebase) {
+                    firebaseService.deleteDocument('children', appState.children[childIndex].id);
+                }
+
+                showNotification(`تم حذف الطفل ${childName}`, "info");
+            }, [appState.children, appState.useFirebase, showNotification]);
 
             return (
                 <div className={`min-h-screen transition-colors duration-300 ${appState.darkMode ? 'dark-mode' : 'bg-gradient-to-br from-blue-50 to-purple-50'}`}>
-                    <ConnectionStatus firebaseService={firebaseService} />
+                    {/* مؤشر الاتصال */}
+                    {appState.useFirebase && <ConnectionStatus firebaseService={firebaseService} />}
                     
-                    <div className="max-w-7xl mx-auto p-4 container-padding">
-                        {/* محتوى التطبيق يبقى كما هو */}
-                        <div className="text-center">
-                            <h1 className="text-4xl font-bold text-white">نجم التركيز ⭐</h1>
-                            <p className="text-white opacity-80">منصة تعليمية متكاملة</p>
+                    {/* الإشعارات */}
+                    {notification.show && (
+                        <div className={`fixed top-4 left-4 right-4 z-50 p-4 rounded-lg shadow-lg fade-in glass-effect ${
+                            notification.type === "success" ? "notification-success" :
+                            notification.type === "error" ? "notification-error" :
+                            "notification-info"
+                        }`}>
+                            <div className="flex justify-between items-center">
+                                <span className="text-lg text-white">{notification.message}</span>
+                                <button 
+                                    onClick={() => setNotification({ show: false, message: "", type: "" })} 
+                                    className="text-lg font-bold hover:opacity-70 text-white"
+                                >
+                                    ×
+                                </button>
+                            </div>
                         </div>
+                    )}
+
+                    {/* شاشة التحميل */}
+                    {appState.loading && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="glass-effect rounded-2xl p-8 flex flex-col items-center">
+                                <div className="loading-spinner mb-4"></div>
+                                <div className="text-white text-lg">جاري تحميل البيانات...</div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="max-w-7xl mx-auto p-4 container-padding">
+                        {/* الهيدر */}
+                        <header className="text-center mb-8 pt-4">
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setAppState(prev => ({ ...prev, darkMode: !prev.darkMode }))}
+                                        className="p-3 rounded-full glass-effect hover-lift"
+                                        title={appState.darkMode ? "الوضع النهاري" : "الوضع الليلي"}
+                                    >
+                                        {appState.darkMode ? "☀️" : "🌙"}
+                                    </button>
+                                    {appState.useFirebase && (
+                                        <div className="p-3 rounded-full glass-effect firebase-badge">
+                                            ☁️
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                <h1 className="text-4xl font-bold text-white flex items-center justify-center gap-2">
+                                    <span className="float-animation">⭐</span>
+                                    نجم التركيز
+                                    <span className="float-animation">⭐</span>
+                                </h1>
+                                
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => {
+                                            const data = {
+                                                children: appState.children,
+                                                rewards: rewards,
+                                                exportDate: new Date().toISOString(),
+                                                version: "2.0"
+                                            };
+                                            const dataStr = JSON.stringify(data, null, 2);
+                                            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                                            const url = URL.createObjectURL(dataBlob);
+                                            const link = document.createElement('a');
+                                            link.href = url;
+                                            link.download = `star-focus-backup-${new Date().toISOString().split('T')[0]}.json`;
+                                            link.click();
+                                            showNotification("تم تصدير البيانات بنجاح", "success");
+                                        }}
+                                        className="p-3 rounded-full glass-effect hover-lift text-white"
+                                        title="تصدير البيانات"
+                                    >
+                                        📥
+                                    </button>
+                                    <label className="p-3 rounded-full glass-effect hover-lift text-white cursor-pointer" title="استيراد البيانات">
+                                        📤
+                                        <input 
+                                            type="file" 
+                                            accept=".json" 
+                                            onChange={(event) => {
+                                                const file = event.target.files[0];
+                                                if (!file) return;
+
+                                                const reader = new FileReader();
+                                                reader.onload = function(e) {
+                                                    try {
+                                                        const data = JSON.parse(e.target.result);
+                                                        if (data.children) setAppState(prev => ({ ...prev, children: data.children }));
+                                                        if (data.rewards) setRewards(data.rewards);
+                                                        showNotification("تم استيراد البيانات بنجاح", "success");
+                                                    } catch (error) {
+                                                        showNotification("خطأ في استيراد البيانات", "error");
+                                                        console.error("Error importing data:", error);
+                                                    }
+                                                };
+                                                reader.readAsText(file);
+                                                event.target.value = '';
+                                            }}
+                                            className="hidden"
+                                        />
+                                    </label>
+                                </div>
+                            </div>
+                            <p className="text-lg opacity-80 text-white">
+                                {appState.useFirebase ? "منصة متكاملة مع قاعدة بيانات السحابة" : "منصة متكاملة للتخزين المحلي"}
+                            </p>
+                        </header>
+
+                        {/* المحتوى الرئيسي */}
+                        {appState.step === 0 ? (
+                            // شاشة إضافة الأطفال
+                            <div className="glass-effect rounded-2xl p-6 shadow-xl fade-in">
+                                <div className="max-w-4xl mx-auto">
+                                    <h2 className="text-3xl font-bold text-center mb-8 text-white">إضافة طفل جديد</h2>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block mb-2 text-lg text-white">الصورة الرمزية</label>
+                                                <div className="flex items-center gap-4">
+                                                    <button 
+                                                        onClick={() => setNewChild(prev => ({ 
+                                                            ...prev, 
+                                                            avatar: AVATARS[(AVATARS.indexOf(prev.avatar) + 1) % AVATARS.length] 
+                                                        }))}
+                                                        className="text-4xl p-4 rounded-2xl glass-effect hover-lift"
+                                                    >
+                                                        {newChild.avatar}
+                                                    </button>
+                                                    <span className="text-sm opacity-70 text-white">انقر لتغيير الصورة</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block mb-2 text-lg text-white">اسم الطفل</label>
+                                                <input 
+                                                    type="text"
+                                                    value={newChild.name}
+                                                    onChange={(e) => setNewChild(prev => ({ ...prev, name: e.target.value }))}
+                                                    placeholder="أدخل اسم الطفل"
+                                                    className="w-full p-3 rounded-xl glass-effect text-white placeholder-gray-300"
+                                                />
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block mb-2 text-lg text-white">تاريخ الميلاد</label>
+                                                <input 
+                                                    type="date"
+                                                    value={newChild.birthDate}
+                                                    onChange={(e) => setNewChild(prev => ({ ...prev, birthDate: e.target.value }))}
+                                                    className="w-full p-3 rounded-xl glass-effect text-white"
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block mb-2 text-lg text-white">مستوى التركيز</label>
+                                                <div className="flex gap-2">
+                                                    {FOCUS_LEVELS.map(level => (
+                                                        <button
+                                                            key={level}
+                                                            onClick={() => setNewChild(prev => ({ ...prev, focusLevel: level }))}
+                                                            className={`flex-1 p-4 rounded-xl transition-all ${
+                                                                newChild.focusLevel === level 
+                                                                    ? 'bg-white bg-opacity-30 text-white shadow-lg' 
+                                                                    : 'glass-effect hover-lift text-white'
+                                                            }`}
+                                                        >
+                                                            {level}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block mb-2 text-lg text-white">وقت الاستيقاظ</label>
+                                                <input 
+                                                    type="time"
+                                                    value={newChild.wakeTime}
+                                                    onChange={(e) => setNewChild(prev => ({ ...prev, wakeTime: e.target.value }))}
+                                                    className="w-full p-3 rounded-xl glass-effect text-white"
+                                                />
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block mb-2 text-lg text-white">وقت النوم</label>
+                                                <input 
+                                                    type="time"
+                                                    value={newChild.sleepTime}
+                                                    onChange={(e) => setNewChild(prev => ({ ...prev, sleepTime: e.target.value }))}
+                                                    className="w-full p-3 rounded-xl glass-effect text-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* المواد الدراسية */}
+                                    <div className="mb-6">
+                                        <h3 className="text-xl font-bold mb-4 text-white">المواد الدراسية</h3>
+                                        <div className="space-y-2 mb-4">
+                                            {newChild.subjects.length === 0 ? (
+                                                <p className="text-white text-center py-4">لم يتم إضافة أي مواد بعد</p>
+                                            ) : (
+                                                newChild.subjects.map((subject, index) => (
+                                                    <div key={index} className="flex justify-between items-center p-3 glass-effect rounded-xl">
+                                                        <span className="text-white">{subject.name} - {subject.duration} دقيقة</span>
+                                                        <button 
+                                                            onClick={() => setNewChild(prev => ({
+                                                                ...prev,
+                                                                subjects: prev.subjects.filter((_, i) => i !== index)
+                                                            }))}
+                                                            className="text-red-400 hover:text-red-300"
+                                                        >
+                                                            حذف
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                        <button 
+                                            onClick={() => {
+                                                const name = prompt("أدخل اسم المادة:");
+                                                if (!name) return;
+                                                
+                                                const duration = parseInt(prompt("أدخل مدة المادة بالدقائق:"), 10);
+                                                if (isNaN(duration)) {
+                                                    showNotification("الرجاء إدخال رقم صحيح للمدة", "error");
+                                                    return;
+                                                }
+
+                                                setNewChild(prev => ({
+                                                    ...prev,
+                                                    subjects: [...prev.subjects, { name, duration, id: utils.generateId() }]
+                                                }));
+                                                showNotification(`تمت إضافة مادة ${name}`, "success");
+                                            }}
+                                            className="w-full p-3 glass-effect rounded-xl text-white hover:bg-white hover:bg-opacity-20 transition-all"
+                                        >
+                                            + إضافة مادة جديدة
+                                        </button>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={() => addChild(newChild)}
+                                        className="w-full bg-white bg-opacity-20 text-white p-4 rounded-2xl text-xl font-bold hover:bg-opacity-30 transition-all"
+                                    >
+                                        بدء الرحلة التعليمية 🚀
+                                    </button>
+                                </div>
+                            </div>
+                        ) : appState.children.length === 0 ? (
+                            <div className="text-center py-12">
+                                <p className="text-white text-xl mb-4">لا يوجد أطفال مسجلين</p>
+                                <button
+                                    onClick={() => setAppState(prev => ({ ...prev, step: 0 }))}
+                                    className="bg-blue-500 text-white p-4 rounded-2xl text-lg hover:bg-blue-600 transition-all"
+                                >
+                                    إضافة أول طفل
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="text-center py-12">
+                                <p className="text-white text-xl mb-4">التطبيق جاهز للتشغيل! ✅</p>
+                                <p className="text-white opacity-80 mb-4">Firebase متصل بنجاح</p>
+                                <p className="text-white opacity-60">عدد الأطفال: {appState.children.length}</p>
+                                <p className="text-white opacity-60">عدد المكافآت: {rewards.length}</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             );
